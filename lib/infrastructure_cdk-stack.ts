@@ -1,37 +1,110 @@
 import * as cdk from '@aws-cdk/core';
 import * as codepipeline from '@aws-cdk/aws-codepipeline';
 import * as codepipeline_actions from '@aws-cdk/aws-codepipeline-actions';
+import * as ssm from '@aws-cdk/aws-ssm';
+import * as secretsmanager from '@aws-cdk/aws-secretsmanager';
+import { StackParameters } from './infrastructure_cdk-stacks';
+import * as codebuild from '@aws-cdk/aws-codebuild';
 
 export class InfrastructureCdkStack extends cdk.Stack {
   constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    const owner = this.node.tryGetContext('owner');
-    const repo = this.node.tryGetContext('repo');
-    const oauthToken = this.node.tryGetContext('oauthToken');
-    const branch = this.node.tryGetContext('branch');
+    const { oauth, branch, owner, repo } = getParameters(this);
+
+    const sourceOutput = new codepipeline.Artifact();
+    const cdkBuildOutput = new codepipeline.Artifact();
+
+    const cdkBuild = new codebuild.PipelineProject(this, 'CdkBuild', {
+      buildSpec: codebuild.BuildSpec.fromObject({
+        version: '0.2',
+        phases: {
+          install: {
+            commands: 'npm install',
+          },
+          build: {
+            commands: [
+              'npm run build',
+              'npm run cdk synth -- -o dist'
+            ],
+          },
+        },
+        artifacts: {
+          'base-directory': 'dist',
+          files: [
+            'InfrastructureCdkStack.template.json',
+          ],
+        },
+      }),
+      environment: {
+        buildImage: codebuild.LinuxBuildImage.STANDARD_2_0,
+      },
+    });
 
     const pipeline = new codepipeline.Pipeline(this, 'InfrastructurePipeline', {
       pipelineName: 'InfrastructurePipeline',
       crossAccountKeys: false,
+      stages: [
+        {
+          stageName: 'Source',
+          actions: [
+            new codepipeline_actions.GitHubSourceAction({
+              actionName: 'GitHub_Source',
+              owner,
+              repo,
+              oauthToken: oauth,
+              output: sourceOutput,
+              branch
+            })
+          ],
+        },
+        {
+          stageName: 'Build',
+          actions: [ 
+            new codepipeline_actions.CodeBuildAction({
+              actionName: 'CDK_Build',
+              project: cdkBuild,
+              input: sourceOutput,
+              outputs: [cdkBuildOutput],
+            }),
+          ],
+        },
+        {
+          stageName: 'Deploy',
+          actions: [
+            new codepipeline_actions.CloudFormationCreateUpdateStackAction({
+              actionName: 'Deploy',
+              templatePath: cdkBuildOutput.atPath('InfrastructureCdkStack.template.json'),
+              stackName: 'InfrastructureCdkStack',
+              adminPermissions: true,
+            }),
+          ],
+        }
+      ]
+    }); 
 
-    });
+  }
+}
 
-    const sourceOutput = new codepipeline.Artifact();
+const getParameters = (stack: cdk.Stack): StackParameters => {
+  const owner = ssm.StringParameter.fromStringParameterAttributes(stack, 'OwnerParam', {
+    parameterName: 'owner'
+  }).stringValue;
 
-    const sourceAction = new codepipeline_actions.GitHubSourceAction({
-      actionName: 'GitHub_Source',
-      owner,
-      repo,
-      oauthToken,
-      output: sourceOutput,
-      branch
-    });
+  const branch = ssm.StringParameter.fromStringParameterAttributes(stack, 'BranchParam', {
+    parameterName: 'branch'
+  }).stringValue;
 
-    const sourceStage = pipeline.addStage({
-      stageName: 'Source',
-      actions: [sourceAction
-      ],
-    });
+  const repo = ssm.StringParameter.fromStringParameterAttributes(stack, 'RepoParam', {
+    parameterName: 'repo'
+  }).stringValue;
+
+  const oauth = secretsmanager.Secret.fromSecretNameV2(stack, 'OauthSecret', 'oauth-token').secretValue
+
+  return {
+    owner,
+    branch,
+    repo,
+    oauth
   }
 }
