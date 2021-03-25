@@ -14,3 +14,6 @@ if [ "$oauth" == "" ]; then
 fi
 
 aws secretsmanager create-secret --name oauth-token --secret-string $oauth
+cdk --app "npx ts-node bin/create-secrets_cdk.ts"
+cdk synth CreateSecretsStack
+cdk deploy CreateSecretsStack

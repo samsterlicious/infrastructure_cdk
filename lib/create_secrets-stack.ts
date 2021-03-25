@@ -28,7 +28,6 @@ export class CreateSecretsStack extends cdk.Stack {
                 stringValue: BRANCH,
             }); 
         } else {
-            console.log("must define a environment file ie. local.env and set the name of it as an environment variable ie. export ENVIRONMENT=local")
             throw "must define a environment file ie. local.env and set the name of it as an environment variable ie. export ENVIRONMENT=local";
         }
     }
