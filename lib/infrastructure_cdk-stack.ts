@@ -2,9 +2,9 @@ import * as cdk from '@aws-cdk/core';
 import * as codepipeline from '@aws-cdk/aws-codepipeline';
 import * as codepipeline_actions from '@aws-cdk/aws-codepipeline-actions';
 import * as ssm from '@aws-cdk/aws-ssm';
-import * as secretsmanager from '@aws-cdk/aws-secretsmanager';
-import { StackParameters } from './infrastructure_cdk-stacks';
+import * as secretsmanager from '@aws-cdk/aws-secretsmanager'; 
 import * as codebuild from '@aws-cdk/aws-codebuild';
+import { SecretValue } from "@aws-cdk/core";
 
 export class InfrastructureCdkStack extends cdk.Stack {
   constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
@@ -107,4 +107,11 @@ const getParameters = (stack: cdk.Stack): StackParameters => {
     repo,
     oauth
   }
+}
+
+type StackParameters = {
+  owner: string,
+  branch: string,
+  repo: string,
+  oauth: SecretValue
 }
