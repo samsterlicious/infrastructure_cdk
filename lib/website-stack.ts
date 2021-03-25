@@ -10,7 +10,7 @@ export class WebsiteStack extends cdk.Stack {
         super(scope, id, props);
 
         const bucket = new s3.Bucket(this, 'WebsiteBucket', {
-            bucketName: 'sammyBucketForWeb864',
+            bucketName: 'sammy-website-bucket',
             versioned: false,
             removalPolicy: cdk.RemovalPolicy.DESTROY,
             autoDeleteObjects: true

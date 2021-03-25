@@ -141,7 +141,7 @@ const buildWebsitePipeline = (stack: cdk.Stack, owner: string, repo: string, oau
   const sourceOutput = new codepipeline.Artifact();
   const angularOutput = new codepipeline.Artifact();
 
-  const targetBucket = s3.Bucket.fromBucketName(stack, 'WebTargetBucket', 'sammyBucketForWeb864');
+  const targetBucket = s3.Bucket.fromBucketName(stack, 'WebTargetBucket', 'sammy-website-bucket');
 
   const cdkBuild = new codebuild.PipelineProject(stack, 'WebProject', {
     buildSpec: codebuild.BuildSpec.fromObject({
