@@ -171,8 +171,8 @@ const buildWebsitePipeline = (stack: cdk.Stack, owner: string, repo: string, oau
     },
   });
 
-  new codepipeline.Pipeline(stack, 'InfrastructurePipeline', {
-    pipelineName: 'InfrastructurePipeline',
+  new codepipeline.Pipeline(stack, 'WebCodePipeline', {
+    pipelineName: 'WebPipeline',
     crossAccountKeys: false,
     stages: [
       {
