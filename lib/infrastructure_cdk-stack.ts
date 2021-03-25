@@ -73,9 +73,15 @@ export class InfrastructureCdkStack extends cdk.Stack {
           stageName: 'Deploy',
           actions: [
             new codepipeline_actions.CloudFormationCreateUpdateStackAction({
-              actionName: 'Deploy',
+              actionName: 'Pipeline',
               templatePath: cdkBuildOutput.atPath('InfrastructureCdkStack.template.json'),
-              stackName: 'InfrastructureCdkStack',
+              stackName: 'InfrastructureCdkStack', 
+              adminPermissions: true,
+            }),
+            new codepipeline_actions.CloudFormationCreateUpdateStackAction({
+              actionName: 'Website',
+              templatePath: cdkBuildOutput.atPath('InfrastructureCdkStack.template.json'),
+              stackName: 'WebsiteCdkStack', 
               adminPermissions: true,
             }),
           ],
