@@ -4,11 +4,13 @@ import * as acm from '@aws-cdk/aws-certificatemanager';
 import * as cloudfront from '@aws-cdk/aws-cloudfront';
 import * as ssm from '@aws-cdk/aws-ssm';
 import * as route53 from '@aws-cdk/aws-route53';
+import * as route53_targets from '@aws-cdk/aws-route53-targets';
 export class WebsiteStack extends cdk.Stack {
     constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
         super(scope, id, props);
 
         const bucket = new s3.Bucket(this, 'WebsiteBucket', {
+            bucketName: 'sammyBucketForWeb864',
             versioned: false,
             removalPolicy: cdk.RemovalPolicy.DESTROY,
             autoDeleteObjects: true
@@ -32,7 +34,7 @@ export class WebsiteStack extends cdk.Stack {
             validation: acm.CertificateValidation.fromDns(myHostedZone),
         });
 
-        new cloudfront.CloudFrontWebDistribution(this, 'WebsiteCloudFront', {
+        const distribution = new cloudfront.CloudFrontWebDistribution(this, 'WebsiteCloudFront', {
             originConfigs: [{
                 s3OriginSource: { s3BucketSource: bucket },
                 behaviors: [{ isDefaultBehavior: true }],
@@ -53,6 +55,11 @@ export class WebsiteStack extends cdk.Stack {
             ),
         });
 
+        new route53.ARecord(this, 'AliasRecord', {
+            recordName: 'sammy.link',
+            zone: myHostedZone,
+            target: route53.RecordTarget.fromAlias(new route53_targets.CloudFrontTarget(distribution)),
+        });
 
     }
 }

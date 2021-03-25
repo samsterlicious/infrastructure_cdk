@@ -11,6 +11,6 @@ done
 if [ "$oauth" == "" ]; then
         echo "pass oauth token ie. (-o token_example)"
         exit
-fi
+fi 
 
-aws secretsmanager create-secret --name oauth-token --secret-string $oauth
+aws secretsmanager create-secret --name oauth-token --secret-string $oauth  
