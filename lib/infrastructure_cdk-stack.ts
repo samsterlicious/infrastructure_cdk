@@ -11,7 +11,7 @@ export class InfrastructureCdkStack extends cdk.Stack {
     super(scope, id, props);
 
     const { oauth, branch, owner, repo } = getParameters(this);
-
+    
     const sourceOutput = new codepipeline.Artifact();
     const cdkBuildOutput = new codepipeline.Artifact();
 
@@ -33,6 +33,7 @@ export class InfrastructureCdkStack extends cdk.Stack {
           'base-directory': 'dist',
           files: [
             'InfrastructureCdkStack.template.json',
+            'WebsiteCdkStack.template.json'
           ],
         },
       }),
@@ -41,7 +42,7 @@ export class InfrastructureCdkStack extends cdk.Stack {
       },
     });
 
-    const pipeline = new codepipeline.Pipeline(this, 'InfrastructurePipeline', {
+    new codepipeline.Pipeline(this, 'InfrastructurePipeline', {
       pipelineName: 'InfrastructurePipeline',
       crossAccountKeys: false,
       stages: [
@@ -80,7 +81,7 @@ export class InfrastructureCdkStack extends cdk.Stack {
             }),
             new codepipeline_actions.CloudFormationCreateUpdateStackAction({
               actionName: 'Website',
-              templatePath: cdkBuildOutput.atPath('InfrastructureCdkStack.template.json'),
+              templatePath: cdkBuildOutput.atPath('WebsiteCdkStack.template.json'),
               stackName: 'WebsiteCdkStack', 
               adminPermissions: true,
             }),
