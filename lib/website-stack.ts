@@ -3,18 +3,47 @@ import * as s3 from '@aws-cdk/aws-s3';
 import * as acm from '@aws-cdk/aws-certificatemanager';
 import * as cloudfront from '@aws-cdk/aws-cloudfront';
 import * as ssm from '@aws-cdk/aws-ssm';
+import * as iam from '@aws-cdk/aws-iam';
 import * as route53 from '@aws-cdk/aws-route53';
 import * as route53_targets from '@aws-cdk/aws-route53-targets';
 export class WebsiteStack extends cdk.Stack {
+
+    distribution: cloudfront.CloudFrontWebDistribution;
+
     constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
         super(scope, id, props);
+
+        const originAccessIdentity = new cloudfront.OriginAccessIdentity(this, 'OAI', {
+            comment: "sammy"
+        });
 
         const bucket = new s3.Bucket(this, 'WebsiteBucket', {
             bucketName: 'sammy-website-bucket',
             versioned: false,
             removalPolicy: cdk.RemovalPolicy.DESTROY,
-            autoDeleteObjects: true
+            autoDeleteObjects: true,
+            encryption: s3.BucketEncryption.S3_MANAGED,
+            blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL
         });
+
+        bucket.grantRead(originAccessIdentity);
+
+        const policyStatement = new iam.PolicyStatement();
+        policyStatement.addActions('s3:GetBucket*');
+        policyStatement.addActions('s3:GetObject*');
+        policyStatement.addActions('s3:List*');
+        policyStatement.addResources(bucket.bucketArn);
+        policyStatement.addResources(`${bucket.bucketArn}/*`);
+        policyStatement.addCanonicalUserPrincipal(originAccessIdentity.cloudFrontOriginAccessIdentityS3CanonicalUserId);
+
+        // testBucket.addToResourcePolicy(policyStatement);
+
+        // Manually create or update bucket policy
+        if (!bucket.policy) {
+            new s3.BucketPolicy(this, 'Policy', { bucket }).document.addStatements(policyStatement);
+        } else {
+            bucket.policy.document.addStatements(policyStatement);
+        }
 
         const hostedZoneId = ssm.StringParameter.fromStringParameterAttributes(this, 'HostedZoneIdParam', {
             parameterName: 'hosted_zone_id'
@@ -34,9 +63,12 @@ export class WebsiteStack extends cdk.Stack {
             validation: acm.CertificateValidation.fromDns(myHostedZone),
         });
 
-        const distribution = new cloudfront.CloudFrontWebDistribution(this, 'WebsiteCloudFront', {
+        this.distribution = new cloudfront.CloudFrontWebDistribution(this, 'WebsiteCloudFront', {
             originConfigs: [{
-                s3OriginSource: { s3BucketSource: bucket },
+                s3OriginSource: {
+                    s3BucketSource: bucket,
+                    originAccessIdentity: originAccessIdentity
+                },
                 behaviors: [{ isDefaultBehavior: true }],
             }],
             errorConfigurations: [
@@ -55,10 +87,9 @@ export class WebsiteStack extends cdk.Stack {
             ),
         });
 
-        new route53.ARecord(this, 'AliasRecord', {
-            recordName: 'sammy.link',
+        new route53.ARecord(this, 'AliasRecord', { 
             zone: myHostedZone,
-            target: route53.RecordTarget.fromAlias(new route53_targets.CloudFrontTarget(distribution)),
+            target: route53.RecordTarget.fromAlias(new route53_targets.CloudFrontTarget(this.distribution)),
         });
 
     }

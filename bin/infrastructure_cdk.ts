@@ -7,5 +7,7 @@ import { CreateSecretsStack } from '../lib/create_secrets-stack';
 
 const app = new cdk.App();
 new CreateSecretsStack(app, 'CreateSecretsStack');
-new InfrastructureCdkStack(app, 'InfrastructureCdkStack');
-new WebsiteStack(app, 'WebsiteCdkStack')
+
+const websiteStack = new WebsiteStack(app, 'WebsiteCdkStack');
+
+new InfrastructureCdkStack(app, 'InfrastructureCdkStack', { distribution: websiteStack.distribution });

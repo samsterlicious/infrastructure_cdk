@@ -6,15 +6,16 @@ import * as secretsmanager from '@aws-cdk/aws-secretsmanager';
 import * as codebuild from '@aws-cdk/aws-codebuild';
 import { SecretValue } from "@aws-cdk/core";
 import * as s3 from '@aws-cdk/aws-s3';
+import * as cloudfront from '@aws-cdk/aws-cloudfront';
 
 export class InfrastructureCdkStack extends cdk.Stack {
-  constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
+  constructor(scope: cdk.Construct, id: string, props: InfraProps) {
     super(scope, id, props);
 
     const { oauth, branch, owner, repo, webRepo } = getParameters(this);
 
     buildInfrastructurePipeline(this, owner, repo, oauth, branch);
-    buildWebsitePipeline(this, owner, webRepo, oauth, branch);
+    buildWebsitePipeline(this, owner, webRepo, oauth, branch, props.distribution);
   }
 }
 
@@ -136,7 +137,7 @@ const buildInfrastructurePipeline = (stack: cdk.Stack, owner: string, repo: stri
 
 }
 
-const buildWebsitePipeline = (stack: cdk.Stack, owner: string, repo: string, oauth: SecretValue, branch: string) => {
+const buildWebsitePipeline = (stack: cdk.Stack, owner: string, repo: string, oauth: SecretValue, branch: string , distribution: cloudfront.CloudFrontWebDistribution) => {
 
   const sourceOutput = new codepipeline.Artifact();
   const angularOutput = new codepipeline.Artifact();
@@ -168,6 +169,22 @@ const buildWebsitePipeline = (stack: cdk.Stack, owner: string, repo: string, oau
     }),
     environment: {
       buildImage: codebuild.LinuxBuildImage.STANDARD_2_0,
+    },
+  });
+
+  const invalidateBuildProject = new codebuild.PipelineProject(stack, `InvalidateProject`, {
+    buildSpec: codebuild.BuildSpec.fromObject({
+      version: '0.2',
+      phases: {
+        build: {
+          commands:[
+            'aws cloudfront create-invalidation --distribution-id ${CLOUDFRONT_ID} --paths "/*"',
+          ],
+        },
+      },
+    }),
+    environmentVariables: {
+      CLOUDFRONT_ID: { value: distribution.distributionId },
     },
   });
 
@@ -206,10 +223,21 @@ const buildWebsitePipeline = (stack: cdk.Stack, owner: string, repo: string, oau
             actionName: 'S3Deploy', 
             bucket: targetBucket,
             input: angularOutput,
-          })
+            runOrder: 1,
+          }),
+          new codepipeline_actions.CodeBuildAction({
+            actionName: 'InvalidateCache',
+            project: invalidateBuildProject,
+            input: angularOutput,
+            runOrder: 2,
+          }),
         ],
       }
     ]
   });
 
+}
+
+interface InfraProps extends cdk.StackProps {
+  distribution: cloudfront.CloudFrontWebDistribution
 }
