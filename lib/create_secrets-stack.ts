@@ -41,7 +41,7 @@ export class CreateSecretsStack extends cdk.Stack {
             new ssm.StringParameter(this, 'HostedZoneIdParam', {
                 parameterName: 'hosted_zone_id',
                 stringValue: HOSTED_ZONE_ID,
-            });
+            }); 
         } else {
             console.log("must define a environment file ie. local.env and set the name of it as an environment variable ie. export ENVIRONMENT=local");
         }
