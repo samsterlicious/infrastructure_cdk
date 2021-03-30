@@ -8,24 +8,21 @@ import { SecretValue } from "@aws-cdk/core";
 import * as s3 from "@aws-cdk/aws-s3";
 import * as cloudfront from "@aws-cdk/aws-cloudfront";
 import * as cognito from "@aws-cdk/aws-cognito";
+import * as route53 from "@aws-cdk/aws-route53";
+import * as acm from "@aws-cdk/aws-certificatemanager";
+import * as route53_targets from "@aws-cdk/aws-route53-targets";
 
 export class InfrastructureCdkStack extends cdk.Stack {
   constructor(scope: cdk.Construct, id: string, props: InfraProps) {
     super(scope, id, props);
 
+    const { distribution, hostedZone } = props;
     const { oauth, branch, owner, repo, webRepo } = getParameters(this);
 
     buildInfrastructurePipeline(this, owner, repo, oauth, branch);
-    buildWebsitePipeline(
-      this,
-      owner,
-      webRepo,
-      oauth,
-      branch,
-      props.distribution
-    );
+    buildWebsitePipeline(this, owner, webRepo, oauth, branch, distribution);
 
-    buildCognito(this);
+    buildCognito(this, hostedZone);
   }
 }
 
@@ -67,6 +64,7 @@ const getParameters = (stack: cdk.Stack): StackParameters => {
     "OauthSecret",
     "oauth-token"
   ).secretValue;
+
   const webOauth = secretsmanager.Secret.fromSecretNameV2(
     stack,
     "WebOauthSecret",
@@ -285,14 +283,95 @@ const buildWebsitePipeline = (
   });
 };
 
-const buildCognito = (stack: cdk.Stack) => {
+const buildCognito = (stack: cdk.Stack, hostedZone: route53.IHostedZone) => {
+  const clientId = ssm.StringParameter.fromStringParameterAttributes(
+    stack,
+    "ClientIdParam",
+    {
+      parameterName: "client_id",
+    }
+  ).stringValue;
+
+  const clientSecret = ssm.StringParameter.fromStringParameterAttributes(
+    stack,
+    "ClientSecretParam",
+    {
+      parameterName: "client_secret",
+    }
+  ).stringValue;
+
+  const issuer = ssm.StringParameter.fromStringParameterAttributes(
+    stack,
+    "IssuerParam",
+    {
+      parameterName: "issuer",
+    }
+  ).stringValue;
+
   const pool = new cognito.UserPool(stack, "UserPool", {
-    userPoolName: "sammy-userpool",
+    userPoolName: "sammy-userpool", 
   });
 
-  pool.addClient("sammy-app-client");
+  pool.addClient("sammy-app-client", {
+    supportedIdentityProviders: [cognito.UserPoolClientIdentityProvider.custom("auth0")],
+    oAuth: {
+      flows: {
+        authorizationCodeGrant: true,
+      },
+      scopes: [
+        cognito.OAuthScope.OPENID,
+        cognito.OAuthScope.EMAIL,
+        cognito.OAuthScope.PROFILE,
+        cognito.OAuthScope.PHONE,
+      ],
+      callbackUrls: ["https://sammy.link", "http://localhost:4200", "https://auth.sammy.link/oauth2/idpresponse"],
+      logoutUrls: ["https://sammy.link", "http://localhost:4200"],
+    },
+    preventUserExistenceErrors: true,
+  });
+
+  new cognito.CfnUserPoolIdentityProvider(stack, "IdentityProvider", {
+    providerName: "auth0",
+    providerType: "OIDC",
+    userPoolId: pool.userPoolId,
+    attributeMapping: {
+      sub: "Username",
+      email: "Email",
+      name: "Name"
+    },
+    providerDetails: {
+      client_id: clientId,
+      client_secret: clientSecret,
+      attributes_request_method: "GET",
+      oidc_issuer: issuer,
+      authorize_scopes: "openid profile email phone",
+    },
+  });
+
+  const domainName = "auth.sammy.link";
+
+  const certificate = new acm.Certificate(stack, "Certificate", {
+    domainName,
+    validation: acm.CertificateValidation.fromDns(hostedZone),
+  });
+
+  const userPoolDomain = pool.addDomain("CustomDomain", {
+    customDomain: {
+      domainName,
+      certificate,
+    },
+  });
+
+  new route53.ARecord(stack, "UserPoolCloudFrontAliasRecord", {
+    zone: hostedZone,
+    recordName: "auth",
+    target: route53.RecordTarget.fromAlias(
+      new route53_targets.UserPoolDomainTarget(userPoolDomain)
+    ),
+  });
 };
 
 interface InfraProps extends cdk.StackProps {
   distribution: cloudfront.CloudFrontWebDistribution;
+  hostedZone: route53.IHostedZone;
 }

@@ -9,6 +9,7 @@ import * as route53_targets from '@aws-cdk/aws-route53-targets';
 export class WebsiteStack extends cdk.Stack {
 
     distribution: cloudfront.CloudFrontWebDistribution;
+    hostedZone: route53.IHostedZone;
 
     constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
         super(scope, id, props);
@@ -53,14 +54,14 @@ export class WebsiteStack extends cdk.Stack {
             parameterName: 'zone_name'
         }).stringValue;
 
-        const myHostedZone = route53.HostedZone.fromHostedZoneAttributes(this, 'MyHostedZone', {
+        this.hostedZone = route53.HostedZone.fromHostedZoneAttributes(this, 'MyHostedZone', {
             hostedZoneId,
             zoneName,
         });
 
         const certificate = new acm.Certificate(this, 'Certificate', {
             domainName: 'sammy.link',
-            validation: acm.CertificateValidation.fromDns(myHostedZone),
+            validation: acm.CertificateValidation.fromDns(this.hostedZone),
         });
 
         this.distribution = new cloudfront.CloudFrontWebDistribution(this, 'WebsiteCloudFront', {
@@ -88,7 +89,7 @@ export class WebsiteStack extends cdk.Stack {
         });
 
         new route53.ARecord(this, 'AliasRecord', { 
-            zone: myHostedZone,
+            zone: this.hostedZone,
             target: route53.RecordTarget.fromAlias(new route53_targets.CloudFrontTarget(this.distribution)),
         });
 
