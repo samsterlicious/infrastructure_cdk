@@ -11,6 +11,7 @@ import * as cognito from "@aws-cdk/aws-cognito";
 import * as route53 from "@aws-cdk/aws-route53";
 import * as acm from "@aws-cdk/aws-certificatemanager";
 import * as route53_targets from "@aws-cdk/aws-route53-targets";
+import * as iam from "@aws-cdk/aws-iam";
 
 export class InfrastructureCdkStack extends cdk.Stack {
   constructor(scope: cdk.Construct, id: string, props: InfraProps) {
@@ -111,10 +112,7 @@ const buildInfrastructurePipeline = (
       },
       artifacts: {
         "base-directory": "dist",
-        files: [
-          "InfrastructureCdkStack.template.json",
-          "WebsiteCdkStack.template.json",
-        ],
+        files: ["InfrastructureCdkStack.template.json"],
       },
     }),
     environment: {
@@ -161,14 +159,6 @@ const buildInfrastructurePipeline = (
             stackName: "InfrastructureCdkStack",
             adminPermissions: true,
           }),
-          new codepipeline_actions.CloudFormationCreateUpdateStackAction({
-            actionName: "Website",
-            templatePath: cdkBuildOutput.atPath(
-              "WebsiteCdkStack.template.json"
-            ),
-            stackName: "WebsiteCdkStack",
-            adminPermissions: true,
-          }),
         ],
       },
     ],
@@ -190,6 +180,23 @@ const buildWebsitePipeline = (
     stack,
     "WebTargetBucket",
     "sammy-website-bucket"
+  );
+
+  const wipeS3Project = new codebuild.PipelineProject(
+    stack,
+    `WipeS3Project`,
+    {
+      buildSpec: codebuild.BuildSpec.fromObject({
+        version: "0.2",
+        phases: {
+          build: {
+            commands: [
+              `aws s3 rm --recursive s3://${targetBucket.bucketName}`,
+            ],
+          },
+        },
+      }), 
+    }
   );
 
   const cdkBuild = new codebuild.PipelineProject(stack, "WebProject", {
@@ -234,7 +241,16 @@ const buildWebsitePipeline = (
     }
   );
 
-  new codepipeline.Pipeline(stack, "WebCodePipeline", {
+  const distributionArn = `arn:aws:cloudfront::${stack.account}:distribution/${distribution.distributionId}`;
+
+  invalidateBuildProject.addToRolePolicy(
+    new iam.PolicyStatement({
+      resources: [distributionArn],
+      actions: ["cloudfront:CreateInvalidation"],
+    })
+  );
+
+  const pipeline = new codepipeline.Pipeline(stack, "WebCodePipeline", {
     pipelineName: "WebPipeline",
     crossAccountKeys: false,
     stages: [
@@ -265,22 +281,31 @@ const buildWebsitePipeline = (
       {
         stageName: "Deploy",
         actions: [
+          new codepipeline_actions.CodeBuildAction({
+            actionName: "WipeS3",
+            project: wipeS3Project,
+            input: angularOutput,
+            runOrder: 1,
+          }),
           new codepipeline_actions.S3DeployAction({
             actionName: "S3Deploy",
             bucket: targetBucket,
             input: angularOutput,
-            runOrder: 1,
+            runOrder: 2,
           }),
           new codepipeline_actions.CodeBuildAction({
             actionName: "InvalidateCache",
             project: invalidateBuildProject,
             input: angularOutput,
-            runOrder: 2,
+            runOrder: 3,
           }),
         ],
       },
     ],
   });
+  // const pipelineCfn = pipeline.node.defaultChild as cdk.CfnResource;
+
+  // pipelineCfn.addDeletionOverride("Properties.Stages.3.Actions.1.RoleArn");
 };
 
 const buildCognito = (stack: cdk.Stack, hostedZone: route53.IHostedZone) => {
@@ -309,11 +334,13 @@ const buildCognito = (stack: cdk.Stack, hostedZone: route53.IHostedZone) => {
   ).stringValue;
 
   const pool = new cognito.UserPool(stack, "UserPool", {
-    userPoolName: "sammy-userpool", 
+    userPoolName: "sammy-userpool",
   });
 
   pool.addClient("sammy-app-client", {
-    supportedIdentityProviders: [cognito.UserPoolClientIdentityProvider.custom("auth0")],
+    supportedIdentityProviders: [
+      cognito.UserPoolClientIdentityProvider.custom("auth0"),
+    ],
     oAuth: {
       flows: {
         authorizationCodeGrant: true,
@@ -321,10 +348,14 @@ const buildCognito = (stack: cdk.Stack, hostedZone: route53.IHostedZone) => {
       scopes: [
         cognito.OAuthScope.OPENID,
         cognito.OAuthScope.EMAIL,
+        cognito.OAuthScope.COGNITO_ADMIN,
         cognito.OAuthScope.PROFILE,
-        cognito.OAuthScope.PHONE,
       ],
-      callbackUrls: ["https://sammy.link", "http://localhost:4200", "https://auth.sammy.link/oauth2/idpresponse"],
+      callbackUrls: [
+        "https://sammy.link",
+        "http://localhost:4200",
+        "https://auth.sammy.link/oauth2/idpresponse",
+      ],
       logoutUrls: ["https://sammy.link", "http://localhost:4200"],
     },
     preventUserExistenceErrors: true,
@@ -335,16 +366,15 @@ const buildCognito = (stack: cdk.Stack, hostedZone: route53.IHostedZone) => {
     providerType: "OIDC",
     userPoolId: pool.userPoolId,
     attributeMapping: {
-      sub: "Username",
-      email: "Email",
-      name: "Name"
+      name: "given_name",
+      email: "email",
     },
     providerDetails: {
       client_id: clientId,
       client_secret: clientSecret,
       attributes_request_method: "GET",
       oidc_issuer: issuer,
-      authorize_scopes: "openid profile email phone",
+      authorize_scopes: "openid profile email aws.cognito.signin.user.admin",
     },
   });
 

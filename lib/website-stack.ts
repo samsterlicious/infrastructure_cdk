@@ -77,6 +77,11 @@ export class WebsiteStack extends cdk.Stack {
                     errorCode: 403,
                     responseCode: 200,
                     responsePagePath: '/index.html'
+                },
+                {
+                    errorCode: 404,
+                    responseCode: 200,
+                    responsePagePath: '/index.html'
                 }],
             viewerCertificate: cloudfront.ViewerCertificate.fromAcmCertificate(
                 certificate,
